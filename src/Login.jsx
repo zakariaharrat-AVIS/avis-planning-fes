@@ -38,7 +38,7 @@ export default function Login({ onLogin }) {
       }}>
         <img src="/avis-logo.jpg" alt="Avis" style={{ width: 100, alignSelf: 'center', marginBottom: 8, borderRadius: 6 }} />
         <div style={{ fontSize: 15, fontWeight: 500, textAlign: 'center', marginBottom: 4 }}>
-          Planning Avis Fès
+          Planning Avis Maroc
         </div>
         <div>
           <label style={{ fontSize: 12, color: '#6b6a60', display: 'block', marginBottom: 4 }}>Email</label>
