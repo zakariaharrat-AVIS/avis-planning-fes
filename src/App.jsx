@@ -77,14 +77,14 @@ function ShiftPicker({ onSelect, onClose }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, background: '#fff', border: '1px solid #e2e0d8', borderRadius: 8, padding: 4, minWidth: 130 }}>
-      <button onClick={() => setMode('travail')} style={{ fontSize: 12, textAlign: 'left', padding: '5px 8px', border: 'none', background: 'transparent', cursor: 'pointer' }}>+ Horaire de travail</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: '#fff', border: '1px solid #e2e0d8', borderRadius: 10, padding: 10, minWidth: 180 }}>
+      <button onClick={() => setMode('travail')} style={{ fontSize: 13, textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', cursor: 'pointer', borderRadius: 6 }}>+ Horaire de travail</button>
       {Object.entries(ABSENCE_TYPES).map(([k, v]) => (
-        <button key={k} onClick={() => { onSelect({ shift_type: k }); onClose() }} style={{ fontSize: 12, textAlign: 'left', padding: '5px 8px', border: 'none', background: 'transparent', cursor: 'pointer' }}>
+        <button key={k} onClick={() => { onSelect({ shift_type: k }); onClose() }} style={{ fontSize: 13, textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', cursor: 'pointer', borderRadius: 6 }}>
           {v.label}
         </button>
       ))}
-      <button onClick={onClose} style={{ fontSize: 11, textAlign: 'left', padding: '5px 8px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#9b9a8f' }}>Fermer</button>
+      <button onClick={onClose} style={{ fontSize: 12, textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#9b9a8f', borderRadius: 6 }}>Fermer</button>
     </div>
   )
 }
@@ -178,12 +178,22 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
                           <div>
                             <button onClick={() => setPickerOpen(pickerOpen === pickerKey ? null : pickerKey)} style={{ width: '100%', fontSize: 11, padding: 4 }}>+ shift</button>
                             {pickerOpen === pickerKey && (
-                              <div style={{ position: 'absolute', zIndex: 10, top: '100%', left: 0 }}>
-                                <ShiftPicker
-                                  onSelect={(data) => onAddShift(person.id, d, data)}
-                                  onClose={() => setPickerOpen(null)}
+                              <>
+                                <div
+                                  onClick={() => setPickerOpen(null)}
+                                  style={{ position: 'fixed', inset: 0, zIndex: 999, background: 'rgba(0,0,0,0.15)' }}
                                 />
-                              </div>
+                                <div style={{
+                                  position: 'fixed', zIndex: 1000, top: '50%', left: '50%',
+                                  transform: 'translate(-50%, -50%)',
+                                  boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                                }}>
+                                  <ShiftPicker
+                                    onSelect={(data) => onAddShift(person.id, d, data)}
+                                    onClose={() => setPickerOpen(null)}
+                                  />
+                                </div>
+                              </>
                             )}
                           </div>
                         )}
