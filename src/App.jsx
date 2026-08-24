@@ -8,6 +8,7 @@ const ABSENCE_TYPES = {
   repos: { label: 'Repos', color: '#9b9a8f' },
   recup: { label: 'Récup.', color: '#5b8fc7' },
   maladie: { label: 'Maladie', color: '#c15c5c' },
+  conge: { label: 'Congé', color: '#a37c3e' },
 }
 
 function getMonday(d) {
