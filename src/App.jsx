@@ -7,7 +7,7 @@ const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 const ABSENCE_TYPES = {
   repos: { label: 'Repos', color: '#9b9a8f' },
   recup: { label: 'Récup.', color: '#5b8fc7' },
-  conge: { label: 'Congé', color: '#c15c5c' },
+  maladie: { label: 'Maladie', color: '#c15c5c' },
 }
 
 function getMonday(d) {
