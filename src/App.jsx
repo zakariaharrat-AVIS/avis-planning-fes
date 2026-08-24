@@ -45,6 +45,13 @@ function fmtHours(h) {
   const rounded = Math.round(h * 10) / 10
   return rounded % 1 === 0 ? `${rounded}h` : `${rounded.toFixed(1)}h`
 }
+const WEEKLY_NORM_HOURS = 44
+function hoursDiffLabel(totalHours) {
+  const diff = Math.round((totalHours - WEEKLY_NORM_HOURS) * 10) / 10
+  if (diff === 0) return { text: 'À jour', color: '#5f8f5f' }
+  if (diff > 0) return { text: `+${fmtHours(diff)} récup`, color: '#c88a3e' }
+  return { text: `${fmtHours(diff)}`, color: '#5b8fc7' }
+}
 
 function Avatar({ name, size = 26 }) {
   const initials = name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
@@ -90,6 +97,84 @@ function ShiftPicker({ onSelect, onClose }) {
   )
 }
 
+function MonthlySummary({ agency, weekStart, onClose }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [monthLabel, setMonthLabel] = useState('')
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true)
+      const refMonth = weekStart.getMonth()
+      const refYear = weekStart.getFullYear()
+      setMonthLabel(weekStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))
+
+      const { data: people } = await supabase.from('agents').select('*').eq('agency_id', agency).order('created_at')
+
+      const monthStart = new Date(refYear, refMonth, 1)
+      const monthEnd = new Date(refYear, refMonth + 1, 0)
+      const weekStarts = []
+      let cursor = getMonday(monthStart)
+      while (cursor <= monthEnd) {
+        weekStarts.push(toISODate(cursor))
+        cursor = addDays(cursor, 7)
+      }
+
+      const { data: shifts } = await supabase
+        .from('shifts').select('*').eq('agency_id', agency).in('week_start', weekStarts)
+
+      const result = (people || []).map((p) => {
+        const personShifts = (shifts || []).filter((s) => s.agent_id === p.id && s.shift_type === 'travail')
+        const total = personShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
+        const norm = WEEKLY_NORM_HOURS * weekStarts.length
+        return { name: p.name, isAssistant: p.is_assistant, total, norm, diff: total - norm }
+      })
+      setRows(result)
+      setLoading(false)
+    })()
+  }, [agency, weekStart])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 520, maxHeight: '80vh', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 500, textTransform: 'capitalize' }}>Récapitulatif — {monthLabel}</div>
+          <button onClick={onClose} style={{ fontSize: 12, padding: '6px 10px' }}>Fermer</button>
+        </div>
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 20, color: '#9b9a8f' }}>Calcul en cours…</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid #ebe9e2', color: '#9b9a8f', fontSize: 12 }}>Nom</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px', borderBottom: '1px solid #ebe9e2', color: '#9b9a8f', fontSize: 12 }}>Heures faites</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px', borderBottom: '1px solid #ebe9e2', color: '#9b9a8f', fontSize: 12 }}>Norme</th>
+                <th style={{ textAlign: 'center', padding: '6px 8px', borderBottom: '1px solid #ebe9e2', color: '#9b9a8f', fontSize: 12 }}>Écart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => {
+                const diffRounded = Math.round(r.diff * 10) / 10
+                const diffColor = diffRounded > 0 ? '#c88a3e' : diffRounded < 0 ? '#5b8fc7' : '#5f8f5f'
+                const diffText = diffRounded > 0 ? `+${fmtHours(diffRounded)} récup` : diffRounded < 0 ? fmtHours(diffRounded) : 'À jour'
+                return (
+                  <tr key={i}>
+                    <td style={{ padding: '8px', borderBottom: '1px solid #f5f4f0' }}>{r.name}{r.isAssistant ? ' (Assistant)' : ''}</td>
+                    <td style={{ padding: '8px', borderBottom: '1px solid #f5f4f0', textAlign: 'center' }}>{fmtHours(r.total)}</td>
+                    <td style={{ padding: '8px', borderBottom: '1px solid #f5f4f0', textAlign: 'center', color: '#9b9a8f' }}>{fmtHours(r.norm)}</td>
+                    <td style={{ padding: '8px', borderBottom: '1px solid #f5f4f0', textAlign: 'center', color: diffColor, fontWeight: 500 }}>{diffText}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, setPickerOpen, onAddShift, onRemoveShift, onRemovePerson, onRenamePerson, onAddPerson }) {
   const [menuOpen, setMenuOpen] = useState(null)
   const cellShifts = (personId, dayIndex) => shifts.filter((s) => s.agent_id === personId && s.day_index === dayIndex)
@@ -102,7 +187,10 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
 
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 10, color: '#3d3d38' }}>{title}</div>
+      <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2, color: '#3d3d38' }}>{title}</div>
+      <div style={{ fontSize: 11, color: '#9b9a8f', marginBottom: 10 }}>
+        Norme : {WEEKLY_NORM_HOURS}h/semaine — écart affiché sous le total (bleu = en dessous, orange = récup à donner)
+      </div>
       {people.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 24, color: '#9b9a8f', fontSize: 13, background: '#fff', border: '1px solid #ebe9e2', borderRadius: 10 }}>
           Aucune personne dans cette liste.
@@ -202,7 +290,10 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
                     )
                   })}
                   <td style={{ border: '1px solid #ebe9e2', padding: 8, textAlign: 'center', fontWeight: 500, color: '#3d3d38', background: '#fafaf7' }}>
-                    {fmtHours(totalHours(person.id))}
+                    <div>{fmtHours(totalHours(person.id))}</div>
+                    <div style={{ fontSize: 10, fontWeight: 400, color: hoursDiffLabel(totalHours(person.id)).color, marginTop: 2 }}>
+                      {hoursDiffLabel(totalHours(person.id)).text}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -228,6 +319,7 @@ function ScheduleApp({ user, profile, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState('')
   const [pickerOpen, setPickerOpen] = useState(null)
+  const [showMonthly, setShowMonthly] = useState(false)
 
   const canEdit = profile?.role === 'chef'
 
@@ -339,6 +431,7 @@ function ScheduleApp({ user, profile, onLogout }) {
             <button onClick={() => setWeekStart(addDays(weekStart, -7))}>&larr;</button>
             <button onClick={() => setWeekStart(getMonday(new Date()))}>Aujourd'hui</button>
             <button onClick={() => setWeekStart(addDays(weekStart, 7))}>&rarr;</button>
+            <button onClick={() => setShowMonthly(true)}>Récap. mensuel</button>
           </div>
         </div>
 
@@ -379,6 +472,9 @@ function ScheduleApp({ user, profile, onLogout }) {
           )}
         </div>
       </div>
+      {showMonthly && (
+        <MonthlySummary agency={agency} weekStart={weekStart} onClose={() => setShowMonthly(false)} />
+      )}
     </div>
   )
 }
