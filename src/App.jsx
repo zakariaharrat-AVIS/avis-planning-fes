@@ -89,7 +89,8 @@ function ShiftPicker({ onSelect, onClose }) {
   )
 }
 
-function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, setPickerOpen, onAddShift, onRemoveShift, onRemovePerson, onAddPerson }) {
+function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, setPickerOpen, onAddShift, onRemoveShift, onRemovePerson, onRenamePerson, onAddPerson }) {
+  const [menuOpen, setMenuOpen] = useState(null)
   const cellShifts = (personId, dayIndex) => shifts.filter((s) => s.agent_id === personId && s.day_index === dayIndex)
 
   const totalHours = (personId) => {
@@ -122,11 +123,32 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
             <tbody>
               {people.map((person) => (
                 <tr key={person.id}>
-                  <td style={{ border: '1px solid #ebe9e2', padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                  <td style={{ border: '1px solid #ebe9e2', padding: '8px 12px', whiteSpace: 'nowrap', position: 'relative' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Avatar name={person.name} />
                       <span style={{ fontWeight: 500 }}>{person.name}</span>
-                      {canEdit && <span onClick={() => onRemovePerson(person.id, person.name)} style={{ cursor: 'pointer', color: '#c15c5c', fontSize: 11 }}>✕</span>}
+                      {canEdit && (
+                        <span
+                          onClick={() => setMenuOpen(menuOpen === person.id ? null : person.id)}
+                          style={{ cursor: 'pointer', color: '#9b9a8f', fontSize: 14, marginLeft: 2, padding: '0 4px' }}
+                        >⋯</span>
+                      )}
+                      {menuOpen === person.id && (
+                        <div style={{
+                          position: 'absolute', zIndex: 20, top: '100%', left: 30,
+                          background: '#fff', border: '1px solid #e2e0d8', borderRadius: 8,
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minWidth: 120,
+                        }}>
+                          <button
+                            onClick={() => { setMenuOpen(null); onRenamePerson(person.id, person.name) }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 12, padding: '7px 10px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                          >Renommer</button>
+                          <button
+                            onClick={() => { setMenuOpen(null); onRemovePerson(person.id, person.name) }}
+                            style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 12, padding: '7px 10px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#c15c5c' }}
+                          >Supprimer</button>
+                        </div>
+                      )}
                     </div>
                   </td>
                   {DAYS_SHORT.map((_, d) => {
@@ -257,6 +279,13 @@ function ScheduleApp({ user, profile, onLogout }) {
     await supabase.from('agents').delete().eq('id', personId)
     loadData()
   }
+  const renamePerson = async (personId, currentName) => {
+    const newName = window.prompt('Nouveau nom :', currentName)
+    if (newName && newName.trim() && newName.trim() !== currentName) {
+      await supabase.from('agents').update({ name: newName.trim() }).eq('id', personId)
+      loadData()
+    }
+  }
 
   const agencyName = agencies.find((a) => a.id === agency)?.name || ''
   const agentsList = people.filter((p) => !p.is_assistant)
@@ -318,6 +347,7 @@ function ScheduleApp({ user, profile, onLogout }) {
                 onAddShift={addShift}
                 onRemoveShift={removeShift}
                 onRemovePerson={removePerson}
+                onRenamePerson={renamePerson}
                 onAddPerson={() => addPerson(false)}
               />
               <PeopleTable
@@ -331,6 +361,7 @@ function ScheduleApp({ user, profile, onLogout }) {
                 onAddShift={addShift}
                 onRemoveShift={removeShift}
                 onRemovePerson={removePerson}
+                onRenamePerson={renamePerson}
                 onAddPerson={() => addPerson(true)}
               />
             </>
