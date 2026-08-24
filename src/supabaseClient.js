@@ -1,6 +1,88 @@
-import { createClient } from '@supabase/supabase-js'
+-- ============================================
+-- Schéma de base de données — Planning Avis Fès
+-- À exécuter dans Supabase : SQL Editor > New query
+-- ============================================
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+-- Table des agences
+create table agencies (
+  id text primary key,
+  name text not null
+);
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+insert into agencies (id, name) values
+  ('fez', 'FES Aéroport (FEZ)'),
+  ('fz2', 'FES Centre-Ville (FZ2)');
+
+-- Table des agents
+create table agents (
+  id uuid primary key default gen_random_uuid(),
+  agency_id text references agencies(id) not null,
+  name text not null,
+  category text not null default 'agent' check (category in ('agent', 'assistant')),
+  created_at timestamp with time zone default now()
+);
+
+-- Table du planning (un enregistrement par agent/jour/semaine)
+create table shifts (
+  id uuid primary key default gen_random_uuid(),
+  agency_id text references agencies(id) not null,
+  agent_id uuid references agents(id) on delete cascade not null,
+  week_start date not null,
+  day_index int not null check (day_index >= 0 and day_index <= 6),
+  shift_type text not null,
+  start_time text,
+  end_time text,
+  created_at timestamp with time zone default now()
+);
+
+create index idx_shifts_lookup on shifts (agency_id, week_start);
+create index idx_agents_agency on agents (agency_id);
+
+-- Activer l'accès en temps réel (pour que les mises à jour apparaissent instantanément)
+alter publication supabase_realtime add table shifts;
+alter publication supabase_realtime add table agents;
+
+-- Sécurité : accès en lecture pour tous, écriture ouverte (à restreindre plus tard avec authentification)
+alter table agencies enable row level security;
+alter table agents enable row level security;
+alter table shifts enable row level security;
+
+create policy "Lecture publique agences" on agencies for select using (true);
+create policy "Lecture publique agents" on agents for select using (true);
+create policy "Ecriture authentifiee agents" on agents for insert with check (auth.role() = 'authenticated');
+create policy "Suppression authentifiee agents" on agents for delete using (auth.role() = 'authenticated');
+create policy "Lecture publique shifts" on shifts for select using (true);
+create policy "Ecriture authentifiee shifts" on shifts for insert with check (auth.role() = 'authenticated');
+create policy "Suppression authentifiee shifts" on shifts for delete using (auth.role() = 'authenticated');
+
+-- Agents par défaut pour démarrer (à modifier ensuite dans l'app)
+insert into agents (agency_id, name) values
+  ('fez', 'Agent 1'), ('fez', 'Agent 2'), ('fez', 'Agent 3'),
+  ('fez', 'Agent 4'), ('fez', 'Agent 5'), ('fez', 'Agent 6'), ('fez', 'Agent 7'),
+  ('fz2', 'Agent 1'), ('fz2', 'Agent 2'), ('fz2', 'Agent 3'),
+  ('fz2', 'Agent 4'), ('fz2', 'Agent 5'), ('fz2', 'Agent 6'), ('fz2', 'Agent 7');
+
+-- ============================================
+-- MIGRATION — à exécuter uniquement si la base existe déjà
+-- (ne pas relancer les commandes "create table" ci-dessus dans ce cas)
+-- ============================================
+
+-- 1. Nouvelles colonnes
+alter table agents add column if not exists category text not null default 'agent' check (category in ('agent', 'assistant'));
+alter table shifts add column if not exists start_time text;
+alter table shifts add column if not exists end_time text;
+
+-- 2. Remplacer les anciennes politiques d'écriture ouvertes par des politiques réservées aux utilisateurs connectés
+drop policy if exists "Ecriture publique agents" on agents;
+drop policy if exists "Suppression publique agents" on agents;
+drop policy if exists "Ecriture publique shifts" on shifts;
+drop policy if exists "Suppression publique shifts" on shifts;
+
+create policy "Ecriture authentifiee agents" on agents for insert with check (auth.role() = 'authenticated');
+create policy "Suppression authentifiee agents" on agents for delete using (auth.role() = 'authenticated');
+create policy "Ecriture authentifiee shifts" on shifts for insert with check (auth.role() = 'authenticated');
+create policy "Suppression authentifiee shifts" on shifts for delete using (auth.role() = 'authenticated');
+
+-- 3. Créer un compte chef d'agence :
+-- Authentication > Users > Add user (dans le tableau de bord Supabase), avec un email et un mot de passe.
+-- Il n'y a pas d'inscription publique dans l'app — les comptes se créent uniquement depuis ce tableau de bord.
