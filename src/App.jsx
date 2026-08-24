@@ -64,6 +64,80 @@ function Avatar({ name, size = 26 }) {
   )
 }
 
+function DatePicker({ weekStart, onSelectWeek, onClose }) {
+  const [viewMonth, setViewMonth] = useState(new Date(weekStart.getFullYear(), weekStart.getMonth(), 1))
+
+  const monthLabel = viewMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })
+  const firstDay = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1)
+  const startOffset = (firstDay.getDay() + 6) % 7 // lundi = 0
+  const daysInMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 0).getDate()
+
+  const cells = []
+  for (let i = 0; i < startOffset; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+
+  const isSelectedWeek = (day) => {
+    if (!day) return false
+    const date = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day)
+    const mondayOfDate = getMonday(date)
+    return toISODate(mondayOfDate) === toISODate(weekStart)
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', top: '100%', left: 0, zIndex: 50, marginTop: 4,
+      background: '#fff', border: '1px solid #e2e0d8', borderRadius: 10,
+      boxShadow: '0 4px 16px rgba(0,0,0,0.1)', padding: 14, width: 260,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <button
+          onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}
+          style={{ fontSize: 12, padding: '3px 8px' }}
+        >&larr;</button>
+        <div style={{ fontSize: 13, fontWeight: 500, textTransform: 'capitalize' }}>{monthLabel}</div>
+        <button
+          onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}
+          style={{ fontSize: 12, padding: '3px 8px' }}
+        >&rarr;</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+        {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((d, i) => (
+          <div key={i} style={{ fontSize: 10, color: '#9b9a8f', textAlign: 'center', padding: 2 }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+        {cells.map((day, i) => (
+          <div
+            key={i}
+            onClick={() => {
+              if (!day) return
+              const date = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), day)
+              onSelectWeek(getMonday(date))
+              onClose()
+            }}
+            style={{
+              fontSize: 12, textAlign: 'center', padding: '6px 0', borderRadius: 6,
+              cursor: day ? 'pointer' : 'default',
+              background: isSelectedWeek(day) ? '#f5e6e7' : 'transparent',
+              color: day ? '#3d3d38' : 'transparent',
+              fontWeight: isSelectedWeek(day) ? 600 : 400,
+            }}
+          >
+            {day || '-'}
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between' }}>
+        <button
+          onClick={() => { onSelectWeek(getMonday(new Date())); onClose() }}
+          style={{ fontSize: 11, padding: '5px 8px' }}
+        >Aujourd'hui</button>
+        <button onClick={onClose} style={{ fontSize: 11, padding: '5px 8px' }}>Fermer</button>
+      </div>
+    </div>
+  )
+}
+
 function ShiftPicker({ onSelect, onClose }) {
   const [mode, setMode] = useState(null)
   const [start, setStart] = useState('08:00')
@@ -98,7 +172,8 @@ function ShiftPicker({ onSelect, onClose }) {
   )
 }
 
-function MonthlySummary({ agency, weekStart, onClose }) {
+function MonthlySummary({ agency, weekStart: initialWeekStart, onClose }) {
+  const [refDate, setRefDate] = useState(initialWeekStart)
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [monthLabel, setMonthLabel] = useState('')
@@ -106,9 +181,9 @@ function MonthlySummary({ agency, weekStart, onClose }) {
   useEffect(() => {
     (async () => {
       setLoading(true)
-      const refMonth = weekStart.getMonth()
-      const refYear = weekStart.getFullYear()
-      setMonthLabel(weekStart.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))
+      const refMonth = refDate.getMonth()
+      const refYear = refDate.getFullYear()
+      setMonthLabel(refDate.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }))
 
       const { data: people } = await supabase.from('agents').select('*').eq('agency_id', agency).order('created_at')
 
@@ -135,13 +210,17 @@ function MonthlySummary({ agency, weekStart, onClose }) {
       setRows(result)
       setLoading(false)
     })()
-  }, [agency, weekStart])
+  }, [agency, refDate])
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 520, maxHeight: '80vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 500, textTransform: 'capitalize' }}>Récapitulatif — {monthLabel}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setRefDate(new Date(refDate.getFullYear(), refDate.getMonth() - 1, 1))} style={{ fontSize: 12, padding: '4px 8px' }}>&larr;</button>
+            <div style={{ fontSize: 16, fontWeight: 500, textTransform: 'capitalize', minWidth: 150, textAlign: 'center' }}>{monthLabel}</div>
+            <button onClick={() => setRefDate(new Date(refDate.getFullYear(), refDate.getMonth() + 1, 1))} style={{ fontSize: 12, padding: '4px 8px' }}>&rarr;</button>
+          </div>
           <button onClick={onClose} style={{ fontSize: 12, padding: '6px 10px' }}>Fermer</button>
         </div>
         {loading ? (
@@ -330,6 +409,7 @@ function ScheduleApp({ user, profile, onLogout }) {
   const [saveStatus, setSaveStatus] = useState('')
   const [pickerOpen, setPickerOpen] = useState(null)
   const [showMonthly, setShowMonthly] = useState(false)
+  const [showDatePicker, setShowDatePicker] = useState(false)
 
   const canEdit = profile?.role === 'chef'
 
@@ -437,9 +517,16 @@ function ScheduleApp({ user, profile, onLogout }) {
               Semaine du {fmtDateWithYear(weekStart)} au {fmtDateWithYear(addDays(weekStart, 6))}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, position: 'relative' }}>
             <button onClick={() => setWeekStart(addDays(weekStart, -7))}>&larr;</button>
-            <button onClick={() => setWeekStart(getMonday(new Date()))}>Aujourd'hui</button>
+            <button onClick={() => setShowDatePicker(!showDatePicker)}>📅 Choisir une date</button>
+            {showDatePicker && (
+              <DatePicker
+                weekStart={weekStart}
+                onSelectWeek={setWeekStart}
+                onClose={() => setShowDatePicker(false)}
+              />
+            )}
             <button onClick={() => setWeekStart(addDays(weekStart, 7))}>&rarr;</button>
             <button onClick={() => setShowMonthly(true)}>Récap. mensuel</button>
           </div>
