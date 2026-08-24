@@ -46,8 +46,9 @@ function fmtHours(h) {
   return rounded % 1 === 0 ? `${rounded}h` : `${rounded.toFixed(1)}h`
 }
 const WEEKLY_NORM_HOURS = 44
-function hoursDiffLabel(totalHours) {
-  const diff = Math.round((totalHours - WEEKLY_NORM_HOURS) * 10) / 10
+const HOURS_PER_ABSENCE_DAY = 8
+function hoursDiffLabel(totalHours, norm) {
+  const diff = Math.round((totalHours - norm) * 10) / 10
   if (diff === 0) return { text: 'À jour', color: '#5f8f5f' }
   if (diff > 0) return { text: `+${fmtHours(diff)} récup`, color: '#c88a3e' }
   return { text: `${fmtHours(diff)}`, color: '#5b8fc7' }
@@ -124,9 +125,11 @@ function MonthlySummary({ agency, weekStart, onClose }) {
         .from('shifts').select('*').eq('agency_id', agency).in('week_start', weekStarts)
 
       const result = (people || []).map((p) => {
-        const personShifts = (shifts || []).filter((s) => s.agent_id === p.id && s.shift_type === 'travail')
-        const total = personShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
-        const norm = WEEKLY_NORM_HOURS * weekStarts.length
+        const personShifts = (shifts || []).filter((s) => s.agent_id === p.id)
+        const workShifts = personShifts.filter((s) => s.shift_type === 'travail')
+        const total = workShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
+        const absenceDays = personShifts.filter((s) => s.shift_type === 'conge' || s.shift_type === 'maladie').length
+        const norm = (WEEKLY_NORM_HOURS * weekStarts.length) - (absenceDays * HOURS_PER_ABSENCE_DAY)
         return { name: p.name, isAssistant: p.is_assistant, total, norm, diff: total - norm }
       })
       setRows(result)
@@ -185,11 +188,18 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
       .reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
   }
 
+  const personalNorm = (personId) => {
+    const absenceDays = shifts.filter((s) =>
+      s.agent_id === personId && (s.shift_type === 'conge' || s.shift_type === 'maladie')
+    ).length
+    return WEEKLY_NORM_HOURS - (absenceDays * HOURS_PER_ABSENCE_DAY)
+  }
+
   return (
     <div style={{ marginBottom: 28 }}>
       <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2, color: '#3d3d38' }}>{title}</div>
       <div style={{ fontSize: 11, color: '#9b9a8f', marginBottom: 10 }}>
-        Norme : {WEEKLY_NORM_HOURS}h/semaine — écart affiché sous le total (bleu = en dessous, orange = récup à donner)
+        Norme : {WEEKLY_NORM_HOURS}h/semaine (réduite de {HOURS_PER_ABSENCE_DAY}h par jour de Congé/Maladie) — écart affiché sous le total
       </div>
       {people.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 24, color: '#9b9a8f', fontSize: 13, background: '#fff', border: '1px solid #ebe9e2', borderRadius: 10 }}>
@@ -291,8 +301,8 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
                   })}
                   <td style={{ border: '1px solid #ebe9e2', padding: 8, textAlign: 'center', fontWeight: 500, color: '#3d3d38', background: '#fafaf7' }}>
                     <div>{fmtHours(totalHours(person.id))}</div>
-                    <div style={{ fontSize: 10, fontWeight: 400, color: hoursDiffLabel(totalHours(person.id)).color, marginTop: 2 }}>
-                      {hoursDiffLabel(totalHours(person.id)).text}
+                    <div style={{ fontSize: 10, fontWeight: 400, color: hoursDiffLabel(totalHours(person.id), personalNorm(person.id)).color, marginTop: 2 }}>
+                      {hoursDiffLabel(totalHours(person.id), personalNorm(person.id)).text}
                     </div>
                   </td>
                 </tr>
