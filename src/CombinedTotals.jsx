@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
-function hoursBetween(start, end) {
+function hoursBetween(start, end, agencyId) {
   if (!start || !end) return 0
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
   let mins = (eh * 60 + em) - (sh * 60 + sm)
   if (mins < 0) mins += 24 * 60
+  const isStandardFZ2Shift = agencyId === 'fz2' && start === '08:00' && end === '19:00'
+  if (isStandardFZ2Shift) mins -= 120
   return mins / 60
 }
 function fmtHours(h) {
@@ -44,7 +46,7 @@ export default function CombinedTotals({ weekStart, onClose }) {
         const perAgency = agentLinks.map((l) => {
           const ag = (agencies || []).find((a) => a.id === l.agency_id)
           const agentShifts = (shifts || []).filter((s) => s.agent_id === agentId && s.agency_id === l.agency_id && s.shift_type === 'travail')
-          const hours = agentShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
+          const hours = agentShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time, s.agency_id), 0)
           return { agencyName: ag?.name || l.agency_id, hours }
         })
         const totalHours = perAgency.reduce((sum, p) => sum + p.hours, 0)
