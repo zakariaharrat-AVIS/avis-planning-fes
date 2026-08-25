@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient'
 import Login from './Login'
 import ChatWidget from './ChatWidget'
 import PerformanceImport from './PerformanceImport'
+import AutoRoster from './AutoRoster'
 
 const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 
@@ -412,6 +413,7 @@ function ScheduleApp({ user, profile, onLogout }) {
   const [pickerOpen, setPickerOpen] = useState(null)
   const [showMonthly, setShowMonthly] = useState(false)
   const [showPerfImport, setShowPerfImport] = useState(false)
+  const [showAutoRoster, setShowAutoRoster] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
 
   const canEdit = profile?.role === 'chef'
@@ -533,6 +535,7 @@ function ScheduleApp({ user, profile, onLogout }) {
             <button onClick={() => setWeekStart(addDays(weekStart, 7))}>&rarr;</button>
             <button onClick={() => setShowMonthly(true)}>Récap. mensuel</button>
             {canEdit && <button onClick={() => setShowPerfImport(true)}>📊 Import performance</button>}
+            {canEdit && <button onClick={() => setShowAutoRoster(true)}>🤖 Générer planning</button>}
           </div>
         </div>
 
@@ -578,6 +581,14 @@ function ScheduleApp({ user, profile, onLogout }) {
       )}
       {showPerfImport && (
         <PerformanceImport agency={agency} onClose={() => setShowPerfImport(false)} />
+      )}
+      {showAutoRoster && (
+        <AutoRoster
+          agency={agency}
+          weekStart={weekStart}
+          onClose={() => setShowAutoRoster(false)}
+          onApplied={loadData}
+        />
       )}
       <ChatWidget weekStart={weekStart} canEdit={canEdit} />
     </div>
