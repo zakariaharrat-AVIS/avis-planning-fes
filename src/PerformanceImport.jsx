@@ -126,33 +126,81 @@ export default function PerformanceImport({ agency, onClose }) {
   }
 
   const computeAndShowScores = (rows, currentMapping) => {
-    const results = rows.map((r) => {
-      const score = computeScore(r)
-      const agentId = currentMapping[r.co_agent_id]
+    // Fusionner les lignes du même agent (ex: apparaît dans plusieurs agences du fichier)
+    const grouped = {}
+    rows.forEach((r) => {
+      const key = `${r.co_agent_id}-${r.year}-${r.month}`
+      if (!grouped[key]) grouped[key] = { ...r, _rows: [r] }
+      else grouped[key]._rows.push(r)
+    })
+
+    const results = Object.values(grouped).map((g) => {
+      const rs = g._rows
+      const totalRentals = rs.reduce((sum, r) => sum + (r.rentals || 0), 0)
+      const weightedAvg = (field) => {
+        if (totalRentals === 0) return 0
+        return rs.reduce((sum, r) => sum + (r[field] || 0) * (r.rentals || 0), 0) / totalRentals
+      }
+      const merged = {
+        rentals: totalRentals,
+        scdw_rate: weightedAvg('scdw_rate'),
+        rsn_rate: weightedAvg('rsn_rate'),
+        pai_rate: weightedAvg('pai_rate'),
+        lli_rate: weightedAvg('lli_rate'),
+        upsell_rate: weightedAvg('upsell_rate'),
+        fuf_count: rs.reduce((sum, r) => sum + (r.fuf_count || 0), 0),
+        wifi_count: rs.reduce((sum, r) => sum + (r.wifi_count || 0), 0),
+      }
+      const score = computeScore(merged)
+      const agentId = currentMapping[g.co_agent_id]
       const agent = agentsList.find((a) => a.id === agentId)
-      return { ...r, score, agentName: agent?.name || `ID ${r.co_agent_id} (non lié)` }
+      return { ...merged, score, agentName: agent?.name || `ID ${g.co_agent_id} (non lié)` }
     }).sort((a, b) => b.score - a.score)
+
     setScores(results)
     setStep('results')
   }
 
   const saveImport = async () => {
     setSaving(true)
-    const toInsert = parsedRows.map((r) => ({
-      co_agent_id: r.co_agent_id,
-      agency_mnemonic: r.agency_mnemonic,
-      year: r.year,
-      month: r.month,
-      rentals: r.rentals,
-      scdw_rate: r.scdw_rate,
-      rsn_rate: r.rsn_rate,
-      pai_rate: r.pai_rate,
-      lli_rate: r.lli_rate,
-      upsell_rate: r.upsell_rate,
-      fuf_count: r.fuf_count,
-      wifi_count: r.wifi_count,
-      score: computeScore(r),
-    }))
+
+    // Si un même agent apparaît sur plusieurs lignes (ex: deux agences dans le fichier),
+    // on fusionne en sommant les volumes bruts et en faisant une moyenne pondérée des taux,
+    // pour n'avoir qu'une seule ligne par agent/mois (contrainte imposée par la base).
+    const grouped = {}
+    parsedRows.forEach((r) => {
+      const key = `${r.co_agent_id}-${r.year}-${r.month}`
+      if (!grouped[key]) {
+        grouped[key] = { ...r, _rows: [r] }
+      } else {
+        grouped[key]._rows.push(r)
+      }
+    })
+
+    const toInsert = Object.values(grouped).map((g) => {
+      const rows = g._rows
+      const totalRentals = rows.reduce((sum, r) => sum + (r.rentals || 0), 0)
+      const weightedAvg = (field) => {
+        if (totalRentals === 0) return 0
+        return rows.reduce((sum, r) => sum + (r[field] || 0) * (r.rentals || 0), 0) / totalRentals
+      }
+      const merged = {
+        co_agent_id: g.co_agent_id,
+        agency_mnemonic: rows.map((r) => r.agency_mnemonic).filter(Boolean).join(', '),
+        year: g.year,
+        month: g.month,
+        rentals: totalRentals,
+        scdw_rate: weightedAvg('scdw_rate'),
+        rsn_rate: weightedAvg('rsn_rate'),
+        pai_rate: weightedAvg('pai_rate'),
+        lli_rate: weightedAvg('lli_rate'),
+        upsell_rate: weightedAvg('upsell_rate'),
+        fuf_count: rows.reduce((sum, r) => sum + (r.fuf_count || 0), 0),
+        wifi_count: rows.reduce((sum, r) => sum + (r.wifi_count || 0), 0),
+      }
+      return { ...merged, score: computeScore(merged) }
+    })
+
     const { error: insertError } = await supabase
       .from('performance_imports').upsert(toInsert, { onConflict: 'co_agent_id,year,month' })
     setSaving(false)
