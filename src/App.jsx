@@ -4,6 +4,7 @@ import Login from './Login'
 import ChatWidget from './ChatWidget'
 import PerformanceImport from './PerformanceImport'
 import AutoRoster from './AutoRoster'
+import CombinedTotals from './CombinedTotals'
 
 const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 
@@ -141,14 +142,18 @@ function DatePicker({ weekStart, onSelectWeek, onClose }) {
   )
 }
 
-function ShiftPicker({ onSelect, onClose }) {
+function ShiftPicker({ onSelect, onClose, agency, dayIndex }) {
+  const isSundayFZ2 = agency === 'fz2' && dayIndex === 6
   const [mode, setMode] = useState(null)
-  const [start, setStart] = useState('08:00')
-  const [end, setEnd] = useState('16:00')
+  const [start, setStart] = useState(isSundayFZ2 ? '08:00' : '08:00')
+  const [end, setEnd] = useState(isSundayFZ2 ? '12:00' : '16:00')
 
   if (mode === 'travail') {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: '#fff', border: '1px solid #e2e0d8', borderRadius: 8 }}>
+        {isSundayFZ2 && (
+          <div style={{ fontSize: 11, color: '#c88a3e' }}>Dimanche : agence ouverte 08h-12h</div>
+        )}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input type="time" value={start} onChange={(e) => setStart(e.target.value)} style={{ fontSize: 12, padding: 4, width: 90 }} />
           <span style={{ fontSize: 12, color: '#6b6a60' }}>à</span>
@@ -260,18 +265,22 @@ function MonthlySummary({ agency, weekStart: initialWeekStart, onClose }) {
   )
 }
 
-function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, setPickerOpen, onAddShift, onRemoveShift, onRemovePerson, onRenamePerson, onAddPerson }) {
+function PeopleTable({ title, people, shifts, allShifts, weekStart, canEdit, pickerOpen, setPickerOpen, onAddShift, onRemoveShift, onRemovePerson, onRenamePerson, onAddPerson, agency, onToggleOtherAgency, otherAgencyLabel }) {
   const [menuOpen, setMenuOpen] = useState(null)
   const cellShifts = (personId, dayIndex) => shifts.filter((s) => s.agent_id === personId && s.day_index === dayIndex)
 
+  // Le total et la norme utilisent TOUS les shifts de l'agent (toutes agences confondues pour la semaine),
+  // pas seulement ceux de l'agence actuellement affichée — important pour les agents partagés entre stations.
+  const relevantShifts = allShifts || shifts
+
   const totalHours = (personId) => {
-    return shifts
+    return relevantShifts
       .filter((s) => s.agent_id === personId && s.shift_type === 'travail')
       .reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
   }
 
   const personalNorm = (personId) => {
-    const absenceDays = shifts.filter((s) =>
+    const absenceDays = relevantShifts.filter((s) =>
       s.agent_id === personId && (s.shift_type === 'conge' || s.shift_type === 'maladie')
     ).length
     return WEEKLY_NORM_HOURS - (absenceDays * HOURS_PER_ABSENCE_DAY)
@@ -324,6 +333,12 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
                             onClick={() => { setMenuOpen(null); onRenamePerson(person.id, person.name) }}
                             style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 12, padding: '7px 10px', border: 'none', background: 'transparent', cursor: 'pointer' }}
                           >Renommer</button>
+                          {onToggleOtherAgency && (
+                            <button
+                              onClick={() => { setMenuOpen(null); onToggleOtherAgency(person.id) }}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 12, padding: '7px 10px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                            >{otherAgencyLabel}</button>
+                          )}
                           <button
                             onClick={() => { setMenuOpen(null); onRemovePerson(person.id, person.name) }}
                             style={{ display: 'block', width: '100%', textAlign: 'left', fontSize: 12, padding: '7px 10px', border: 'none', background: 'transparent', cursor: 'pointer', color: '#c15c5c' }}
@@ -372,6 +387,8 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
                                   <ShiftPicker
                                     onSelect={(data) => onAddShift(person.id, d, data)}
                                     onClose={() => setPickerOpen(null)}
+                                    agency={agency}
+                                    dayIndex={d}
                                   />
                                 </div>
                               </>
@@ -386,6 +403,9 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
                     <div style={{ fontSize: 10, fontWeight: 400, color: hoursDiffLabel(totalHours(person.id), personalNorm(person.id)).color, marginTop: 2 }}>
                       {hoursDiffLabel(totalHours(person.id), personalNorm(person.id)).text}
                     </div>
+                    {allShifts && new Set(allShifts.filter((s) => s.agent_id === person.id).map((s) => s.agency_id)).size > 1 && (
+                      <div style={{ fontSize: 9, color: '#9b9a8f', marginTop: 2 }}>(cumul 2 stations)</div>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -408,12 +428,14 @@ function ScheduleApp({ user, profile, onLogout }) {
   const [weekStart, setWeekStart] = useState(getMonday(new Date()))
   const [people, setPeople] = useState([])
   const [shifts, setShifts] = useState([])
+  const [allShiftsForPeople, setAllShiftsForPeople] = useState([])
   const [loading, setLoading] = useState(true)
   const [saveStatus, setSaveStatus] = useState('')
   const [pickerOpen, setPickerOpen] = useState(null)
   const [showMonthly, setShowMonthly] = useState(false)
   const [showPerfImport, setShowPerfImport] = useState(false)
   const [showAutoRoster, setShowAutoRoster] = useState(false)
+  const [showCombinedTotals, setShowCombinedTotals] = useState(false)
   const [showDatePicker, setShowDatePicker] = useState(false)
 
   const canEdit = profile?.role === 'chef'
@@ -431,12 +453,29 @@ function ScheduleApp({ user, profile, onLogout }) {
   const loadData = useCallback(async () => {
     if (!agency) return
     setLoading(true)
-    const { data: peopleData } = await supabase
-      .from('agents').select('*').eq('agency_id', agency).order('created_at')
-    setPeople(peopleData || [])
+    const { data: links } = await supabase
+      .from('agent_agencies').select('agent_id').eq('agency_id', agency)
+    const agentIds = (links || []).map((l) => l.agent_id)
+    let peopleData = []
+    if (agentIds.length > 0) {
+      const { data } = await supabase
+        .from('agents').select('*').in('id', agentIds).order('created_at')
+      peopleData = data || []
+    }
+    setPeople(peopleData)
     const { data: shiftData } = await supabase
       .from('shifts').select('*').eq('agency_id', agency).eq('week_start', toISODate(weekStart))
     setShifts(shiftData || [])
+
+    // Pour le calcul du total combiné : tous les shifts de ces agents, toutes agences confondues,
+    // pour cette même semaine (utile aux agents partagés entre plusieurs stations).
+    if (agentIds.length > 0) {
+      const { data: allShiftData } = await supabase
+        .from('shifts').select('*').in('agent_id', agentIds).eq('week_start', toISODate(weekStart))
+      setAllShiftsForPeople(allShiftData || [])
+    } else {
+      setAllShiftsForPeople([])
+    }
     setLoading(false)
   }, [agency, weekStart])
 
@@ -447,6 +486,7 @@ function ScheduleApp({ user, profile, onLogout }) {
       .channel('shifts-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shifts' }, loadData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'agents' }, loadData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'agent_agencies' }, loadData)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [loadData])
@@ -468,13 +508,18 @@ function ScheduleApp({ user, profile, onLogout }) {
   const addPerson = async (isAssistant) => {
     const name = window.prompt(isAssistant ? "Nom du nouvel assistant :" : 'Nom du nouvel agent :')
     if (name && name.trim()) {
-      await supabase.from('agents').insert({ agency_id: agency, name: name.trim(), is_assistant: isAssistant })
+      const { data: newAgent, error: insertError } = await supabase
+        .from('agents').insert({ agency_id: agency, name: name.trim(), is_assistant: isAssistant })
+        .select().single()
+      if (!insertError && newAgent) {
+        await supabase.from('agent_agencies').insert({ agent_id: newAgent.id, agency_id: agency })
+      }
       loadData()
     }
   }
   const removePerson = async (personId, name) => {
-    if (!window.confirm(`Retirer ${name} ?`)) return
-    await supabase.from('agents').delete().eq('id', personId)
+    if (!window.confirm(`Retirer ${name} de cette agence ?`)) return
+    await supabase.from('agent_agencies').delete().eq('agent_id', personId).eq('agency_id', agency)
     loadData()
   }
   const renamePerson = async (personId, currentName) => {
@@ -483,6 +528,24 @@ function ScheduleApp({ user, profile, onLogout }) {
       await supabase.from('agents').update({ name: newName.trim() }).eq('id', personId)
       loadData()
     }
+  }
+  const toggleOtherAgency = async (personId, otherAgencyId, isChecked) => {
+    if (isChecked) {
+      await supabase.from('agent_agencies').insert({ agent_id: personId, agency_id: otherAgencyId })
+    } else {
+      await supabase.from('agent_agencies').delete().eq('agent_id', personId).eq('agency_id', otherAgencyId)
+    }
+    loadData()
+  }
+
+  const otherAgencyId = agency === 'fez' ? 'fz2' : agency === 'fz2' ? 'fez' : null
+  const otherAgencyName = agencies.find((a) => a.id === otherAgencyId)?.name || ''
+
+  const toggleOtherAgencyForPerson = async (personId) => {
+    if (!otherAgencyId) return
+    const { data: existing } = await supabase
+      .from('agent_agencies').select('*').eq('agent_id', personId).eq('agency_id', otherAgencyId).maybeSingle()
+    await toggleOtherAgency(personId, otherAgencyId, !existing)
   }
 
   const agencyName = agencies.find((a) => a.id === agency)?.name || ''
@@ -536,6 +599,7 @@ function ScheduleApp({ user, profile, onLogout }) {
             <button onClick={() => setShowMonthly(true)}>Récap. mensuel</button>
             {canEdit && <button onClick={() => setShowPerfImport(true)}>📊 Import performance</button>}
             {canEdit && <button onClick={() => setShowAutoRoster(true)}>🤖 Générer planning</button>}
+            {canEdit && <button onClick={() => setShowCombinedTotals(true)}>Σ Total combiné</button>}
           </div>
         </div>
 
@@ -548,6 +612,7 @@ function ScheduleApp({ user, profile, onLogout }) {
                 title="Agents"
                 people={agentsList}
                 shifts={shifts}
+                allShifts={allShiftsForPeople}
                 weekStart={weekStart}
                 canEdit={canEdit}
                 pickerOpen={pickerOpen}
@@ -557,11 +622,15 @@ function ScheduleApp({ user, profile, onLogout }) {
                 onRemovePerson={removePerson}
                 onRenamePerson={renamePerson}
                 onAddPerson={() => addPerson(false)}
+                agency={agency}
+                onToggleOtherAgency={toggleOtherAgencyForPerson}
+                otherAgencyLabel={`Disponible aussi à ${otherAgencyName}`}
               />
               <PeopleTable
                 title="Assistants"
                 people={assistantsList}
                 shifts={shifts}
+                allShifts={allShiftsForPeople}
                 weekStart={weekStart}
                 canEdit={canEdit}
                 pickerOpen={pickerOpen}
@@ -571,6 +640,9 @@ function ScheduleApp({ user, profile, onLogout }) {
                 onRemovePerson={removePerson}
                 onRenamePerson={renamePerson}
                 onAddPerson={() => addPerson(true)}
+                agency={agency}
+                onToggleOtherAgency={toggleOtherAgencyForPerson}
+                otherAgencyLabel={`Disponible aussi à ${otherAgencyName}`}
               />
             </>
           )}
@@ -589,6 +661,9 @@ function ScheduleApp({ user, profile, onLogout }) {
           onClose={() => setShowAutoRoster(false)}
           onApplied={loadData}
         />
+      )}
+      {showCombinedTotals && (
+        <CombinedTotals weekStart={weekStart} onClose={() => setShowCombinedTotals(false)} />
       )}
       <ChatWidget weekStart={weekStart} canEdit={canEdit} />
     </div>
