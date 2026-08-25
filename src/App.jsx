@@ -37,12 +37,19 @@ function fmtDateWithYear(d) {
 function toISODate(d) {
   return d.toISOString().slice(0, 10)
 }
-function hoursBetween(start, end) {
+function hoursBetween(start, end, agencyId) {
   if (!start || !end) return 0
   const [sh, sm] = start.split(':').map(Number)
   const [eh, em] = end.split(':').map(Number)
   let mins = (eh * 60 + em) - (sh * 60 + sm)
   if (mins < 0) mins += 24 * 60
+
+  // Le shift standard FZ2 (08h-19h) inclut une pause déjeuner de 2h (12h-14h), déduite du temps travaillé.
+  const isStandardFZ2Shift = agencyId === 'fz2' && start === '08:00' && end === '19:00'
+  if (isStandardFZ2Shift) {
+    mins -= 120
+  }
+
   return mins / 60
 }
 function fmtHours(h) {
@@ -210,7 +217,7 @@ function MonthlySummary({ agency, weekStart: initialWeekStart, onClose }) {
       const result = (people || []).map((p) => {
         const personShifts = (shifts || []).filter((s) => s.agent_id === p.id)
         const workShifts = personShifts.filter((s) => s.shift_type === 'travail')
-        const total = workShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
+        const total = workShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time, s.agency_id), 0)
         const absenceDays = personShifts.filter((s) => s.shift_type === 'conge' || s.shift_type === 'maladie').length
         const norm = (WEEKLY_NORM_HOURS * weekStarts.length) - (absenceDays * HOURS_PER_ABSENCE_DAY)
         return { name: p.name, isAssistant: p.is_assistant, total, norm, diff: total - norm }
@@ -269,6 +276,16 @@ function PeopleTable({ title, people, shifts, allShifts, weekStart, canEdit, pic
   const [menuOpen, setMenuOpen] = useState(null)
   const cellShifts = (personId, dayIndex) => shifts.filter((s) => s.agent_id === personId && s.day_index === dayIndex)
 
+  // Si l'agent n'a rien dans cette agence ce jour-là, mais travaille sur l'autre station ce même jour,
+  // on l'affiche pour éviter une case vide trompeuse (l'agent n'est pas "absent", il est ailleurs).
+  const otherStationShift = (personId, dayIndex) => {
+    if (!allShifts) return null
+    return allShifts.find((s) =>
+      s.agent_id === personId && s.day_index === dayIndex &&
+      s.agency_id !== agency && s.shift_type === 'travail'
+    )
+  }
+
   // Le total et la norme utilisent TOUS les shifts de l'agent (toutes agences confondues pour la semaine),
   // pas seulement ceux de l'agence actuellement affichée — important pour les agents partagés entre stations.
   const relevantShifts = allShifts || shifts
@@ -276,7 +293,7 @@ function PeopleTable({ title, people, shifts, allShifts, weekStart, canEdit, pic
   const totalHours = (personId) => {
     return relevantShifts
       .filter((s) => s.agent_id === personId && s.shift_type === 'travail')
-      .reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time), 0)
+      .reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time, s.agency_id), 0)
   }
 
   const personalNorm = (personId) => {
@@ -350,6 +367,7 @@ function PeopleTable({ title, people, shifts, allShifts, weekStart, canEdit, pic
                   {DAYS_SHORT.map((_, d) => {
                     const cell = cellShifts(person.id, d)
                     const pickerKey = `${person.id}-${d}`
+                    const otherShift = cell.length === 0 ? otherStationShift(person.id, d) : null
                     return (
                       <td key={d} style={{ border: '1px solid #ebe9e2', padding: 6, verticalAlign: 'top', position: 'relative' }}>
                         {cell.map((s) => {
@@ -367,7 +385,15 @@ function PeopleTable({ title, people, shifts, allShifts, weekStart, canEdit, pic
                             </div>
                           )
                         })}
-                        {cell.length === 0 && !canEdit && (
+                        {otherShift && (
+                          <div style={{
+                            fontSize: 11, padding: '5px 7px', borderRadius: 6, marginBottom: 4,
+                            background: '#e6f1fb', color: '#0c447c', textAlign: 'center',
+                          }}>
+                            → {otherAgencyLabel?.replace('Disponible aussi à ', '') || 'Autre station'}
+                          </div>
+                        )}
+                        {cell.length === 0 && !otherShift && !canEdit && (
                           <div style={{ textAlign: 'center', color: '#c9c6ba', fontSize: 12, padding: '8px 0' }}>—</div>
                         )}
                         {canEdit && (
