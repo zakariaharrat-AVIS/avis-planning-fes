@@ -285,11 +285,11 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
           Aucune personne dans cette liste.
         </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
+        <div className="schedule-scroll" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', background: '#fff', borderRadius: 10, overflow: 'hidden', border: '1px solid #ebe9e2', fontSize: 13 }}>
             <thead>
               <tr>
-                <th style={{ border: '1px solid #ebe9e2', padding: 10, background: '#fafaf7', fontSize: 12, color: '#9b9a8f', textAlign: 'left', minWidth: 150, fontWeight: 500 }}>Nom</th>
+                <th className="sticky-col" style={{ border: '1px solid #ebe9e2', padding: 10, background: '#fafaf7', fontSize: 12, color: '#9b9a8f', textAlign: 'left', minWidth: 150, fontWeight: 500 }}>Nom</th>
                 {DAYS_SHORT.map((d, i) => (
                   <th key={d} style={{ border: '1px solid #ebe9e2', padding: 10, background: '#fafaf7', fontSize: 12, color: '#9b9a8f', textAlign: 'center', minWidth: 105, fontWeight: 500 }}>
                     {d}<br />{fmtDate(addDays(weekStart, i))}
@@ -301,7 +301,7 @@ function PeopleTable({ title, people, shifts, weekStart, canEdit, pickerOpen, se
             <tbody>
               {people.map((person) => (
                 <tr key={person.id}>
-                  <td style={{ border: '1px solid #ebe9e2', padding: '8px 12px', whiteSpace: 'nowrap', position: 'relative' }}>
+                  <td className="sticky-col" style={{ border: '1px solid #ebe9e2', padding: '8px 12px', whiteSpace: 'nowrap', position: 'relative', background: '#fff' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Avatar name={person.name} />
                       <span style={{ fontWeight: 500 }}>{person.name}</span>
@@ -485,24 +485,24 @@ function ScheduleApp({ user, profile, onLogout }) {
   const assistantsList = people.filter((p) => p.is_assistant)
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: '-apple-system, sans-serif' }}>
-      <div style={{
+    <div className="app-layout" style={{ display: 'flex', minHeight: '100vh', fontFamily: '-apple-system, sans-serif' }}>
+      <div className="app-sidebar" style={{
         width: 200, flexShrink: 0, background: '#fff', borderRight: '1px solid #ebe9e2',
         display: 'flex', flexDirection: 'column', padding: '20px 16px',
       }}>
-        <img src="/avis-logo.jpg" alt="Avis" style={{ width: '100%', borderRadius: 6, marginBottom: 20 }} />
+        <img src="/avis-logo.jpg" alt="Avis" className="sidebar-logo" style={{ width: '100%', borderRadius: 6, marginBottom: 20 }} />
 
         {canEdit && (
           <>
-            <div style={{ fontSize: 11, color: '#9b9a8f', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 6 }}>Agence</div>
+            <div className="sidebar-label" style={{ fontSize: 11, color: '#9b9a8f', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 6 }}>Agence</div>
             <select value={agency || ''} onChange={(e) => setAgency(e.target.value)} style={{ width: '100%', marginBottom: 20, padding: '8px 10px', fontSize: 13, borderRadius: 8, border: '1px solid #e2e0d8' }}>
               {agencies.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </>
         )}
 
-        <div style={{ marginTop: 'auto', fontSize: 11, color: '#c9c6ba' }}>{saveStatus || '\u00A0'}</div>
-        <div style={{ fontSize: 12, color: '#6b6a60', marginBottom: 8 }}>{user.email}</div>
+        <div className="sidebar-footer" style={{ marginTop: 'auto', fontSize: 11, color: '#c9c6ba' }}>{saveStatus || '\u00A0'}</div>
+        <div className="sidebar-email" style={{ fontSize: 12, color: '#6b6a60', marginBottom: 8 }}>{user.email}</div>
         <button onClick={onLogout} style={{ fontSize: 12, padding: '6px 10px' }}>Se déconnecter</button>
       </div>
 
