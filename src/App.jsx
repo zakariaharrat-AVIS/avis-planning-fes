@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from './supabaseClient'
 import Login from './Login'
+import ChatWidget from './ChatWidget'
 
 const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
 
@@ -484,6 +485,19 @@ function ScheduleApp({ user, profile, onLogout }) {
   const agentsList = people.filter((p) => !p.is_assistant)
   const assistantsList = people.filter((p) => p.is_assistant)
 
+  const chatScheduleData = people.map((p) => {
+    const personShifts = shifts.filter((s) => s.agent_id === p.id)
+    const days = personShifts.map((s) => {
+      const dayName = DAYS_SHORT[s.day_index]
+      if (s.shift_type === 'travail') {
+        return `${dayName}: ${s.start_time?.slice(0,5)}-${s.end_time?.slice(0,5)}`
+      }
+      const label = ABSENCE_TYPES[s.shift_type]?.label || s.shift_type
+      return `${dayName}: ${label}`
+    })
+    return { nom: p.name, type: p.is_assistant ? 'Assistant' : 'Agent', shifts: days }
+  })
+
   return (
     <div className="app-layout" style={{ display: 'flex', minHeight: '100vh', fontFamily: '-apple-system, sans-serif' }}>
       <div className="app-sidebar" style={{
@@ -572,6 +586,11 @@ function ScheduleApp({ user, profile, onLogout }) {
       {showMonthly && (
         <MonthlySummary agency={agency} weekStart={weekStart} onClose={() => setShowMonthly(false)} />
       )}
+      <ChatWidget
+        agencyName={agencyName}
+        weekLabel={`${fmtDateWithYear(weekStart)} au ${fmtDateWithYear(addDays(weekStart, 6))}`}
+        scheduleData={chatScheduleData}
+      />
     </div>
   )
 }
