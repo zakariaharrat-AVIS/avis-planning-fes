@@ -1,20 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from './supabaseClient'
 
-function getMonday(d) {
-  const date = new Date(d)
-  const day = date.getDay()
-  const diff = date.getDate() - day + (day === 0 ? -6 : 1)
-  date.setDate(diff)
-  date.setHours(0, 0, 0, 0)
-  return date
-}
 function toISODate(d) {
   return d.toISOString().slice(0, 10)
 }
+function addDays(d, n) {
+  const r = new Date(d)
+  r.setDate(r.getDate() + n)
+  return r
+}
 
 export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
-  const [step, setStep] = useState('confirm') // confirm | generating | done
+  const [step, setStep] = useState('confirm')
   const [preview, setPreview] = useState(null)
   const [error, setError] = useState('')
 
@@ -29,7 +26,6 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
       return
     }
 
-    // Récupérer les derniers scores de performance connus pour ces agents
     const { data: mappings } = await supabase.from('agent_id_mapping').select('*')
     const coIds = (mappings || []).filter((m) => people.some((p) => p.id === m.agent_id)).map((m) => m.co_agent_id)
     const { data: perf } = coIds.length > 0
@@ -50,11 +46,25 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
       .map((p) => ({ ...p, score: latestScoreFor(p.id) }))
       .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
 
-    const assignments = [] // { agentId, dayIndex, shiftData }
+    // Récupérer les réservations prévues pour cette agence, sur les 7 jours de la semaine affichée
+    const weekDates = Array.from({ length: 7 }, (_, i) => toISODate(addDays(weekStart, i)))
+    const { data: reservations } = await supabase
+      .from('reservation_imports').select('*').eq('agency_id', agency).in('date', weekDates)
+
+    const hasReservationData = (reservations || []).length > 0
+    const loadByDay = weekDates.map((date) =>
+      (reservations || []).filter((r) => r.date === date).reduce((sum, r) => sum + (r.reservation_count || 0), 0)
+    )
+    // Classement des jours du plus chargé au moins chargé (utilisé seulement si on a des données)
+    const dayOrder = loadByDay
+      .map((load, idx) => ({ idx, load }))
+      .sort((a, b) => b.load - a.load)
+      .map((d) => d.idx)
+
+    const assignments = []
     const isFEZ = agency === 'fez'
 
     if (isFEZ && ranked.length >= 3) {
-      // Rotation Matin / Soir / Repos sur les agents, décalée chaque jour
       for (let day = 0; day < 7; day++) {
         ranked.forEach((agent, idx) => {
           const slot = (idx + day) % 3
@@ -68,28 +78,30 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
         })
       }
     } else {
-      // FZ2 ou moins de 3 agents : horaire fixe 08h-19h, avec un jour de repos en rotation
-      for (let day = 0; day < 7; day++) {
-        ranked.forEach((agent, idx) => {
-          const restDay = idx % 7
+      // Sans données de réservation : un jour de repos fixe par agent, en rotation simple.
+      // Avec des données de réservation : le meilleur agent se voit attribuer le jour de repos
+      // le MOINS chargé (pour qu'il soit présent sur les jours qui comptent le plus).
+      ranked.forEach((agent, idx) => {
+        const restDay = hasReservationData
+          ? dayOrder[6 - (idx % 7)] // jour le moins chargé en dernier de la liste triée
+          : idx % 7
+        for (let day = 0; day < 7; day++) {
           if (day === restDay) {
             assignments.push({ agentId: agent.id, dayIndex: day, shiftData: { shift_type: 'repos' } })
           } else {
             assignments.push({ agentId: agent.id, dayIndex: day, shiftData: { shift_type: 'travail', start_time: '08:00', end_time: '19:00' } })
           }
-        })
-      }
+        }
+      })
     }
 
-    setPreview({ ranked, assignments, assistants: people.filter((p) => p.is_assistant) })
+    setPreview({ ranked, assignments, assistants: people.filter((p) => p.is_assistant), hasReservationData, loadByDay })
     setStep('preview')
   }
 
   const applyRoster = async () => {
     setStep('generating')
     const wk = toISODate(weekStart)
-
-    // Supprimer les shifts existants de la semaine pour cette agence avant d'appliquer la proposition
     await supabase.from('shifts').delete().eq('agency_id', agency).eq('week_start', wk)
 
     const rows = preview.assignments.map((a) => ({
@@ -110,6 +122,8 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
     onApplied()
   }
 
+  const DAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim']
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: 560, maxHeight: '85vh', overflowY: 'auto' }}>
@@ -123,13 +137,12 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
         {step === 'confirm' && (
           <div>
             <div style={{ background: '#fcebeb', border: '1px solid #f0c4c4', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 13, color: '#791f1f' }}>
-              ⚠️ Cette action va <strong>effacer tous les shifts existants</strong> de cette agence pour la semaine affichée, et les remplacer par une proposition automatique basée sur les derniers scores de performance importés.
+              ⚠️ Cette action va <strong>effacer tous les shifts existants</strong> de cette agence pour la semaine affichée, et les remplacer par une proposition automatique.
             </div>
             <p style={{ fontSize: 13, color: '#6b6a60', marginBottom: 16 }}>
-              Version simplifiée : les agents sont classés par score de performance, puis répartis en rotation
-              (Matin / Soir / Repos pour un aéroport avec 3+ agents, ou horaire fixe + 1 jour de repos par semaine sinon).
-              Les règles spécifiques par agent (jours de repos fixes, etc.) ne sont pas encore prises en compte —
-              vous pourrez ajuster manuellement après génération.
+              Les agents sont classés par score de performance. Si des réservations ont été importées pour cette semaine,
+              les meilleurs agents sont positionnés en priorité sur les jours les plus chargés. Sans données de réservation,
+              la répartition se fait en rotation simple.
             </p>
             <button onClick={buildAndPreview} style={{ fontSize: 13, padding: '8px 14px', background: '#d81f26', color: '#fff', border: 'none' }}>
               Voir la proposition
@@ -143,6 +156,23 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
 
         {step === 'preview' && preview && (
           <div>
+            {preview.hasReservationData ? (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Charge de réservation prévue :</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {DAYS_SHORT.map((d, i) => (
+                    <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 11 }}>
+                      <div style={{ color: '#9b9a8f' }}>{d}</div>
+                      <div style={{ fontWeight: 500 }}>{preview.loadByDay[i]}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p style={{ fontSize: 12, color: '#c88a3e', marginBottom: 16 }}>
+                ⚠️ Aucune donnée de réservation trouvée pour cette semaine — répartition en rotation simple, sans priorisation par charge.
+              </p>
+            )}
             <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>Classement utilisé (par score de performance) :</div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginBottom: 16 }}>
               <thead>
@@ -164,7 +194,7 @@ export default function AutoRoster({ agency, weekStart, onClose, onApplied }) {
             </table>
             {preview.assistants.length > 0 && (
               <p style={{ fontSize: 12, color: '#9b9a8f', marginBottom: 16 }}>
-                Les {preview.assistants.length} assistant(s) ne sont pas inclus dans cette génération automatique — à planifier manuellement.
+                Les {preview.assistants.length} assistant(s) ne sont pas inclus dans cette génération automatique.
               </p>
             )}
             <div style={{ display: 'flex', gap: 8 }}>
