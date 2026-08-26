@@ -19,19 +19,19 @@ export default async function handler(req, res) {
 
   // On construit un prompt qui donne à Gemini uniquement les données nécessaires
   // pour répondre — pas d'accès direct à la base de données.
-  const prompt = `Tu es l'assistant du planning Avis Maroc. Tu réponds en français, de façon courte et factuelle, uniquement à partir des données ci-dessous. Si l'information n'y figure pas, dis-le clairement plutôt que d'inventer.
+  const prompt = `Tu es l'assistant du planning Avis Maroc. Tu réponds en français, de façon claire et factuelle, uniquement à partir des données ci-dessous, qui couvrent toutes les agences pour le mois en cours. Si l'information demandée n'y figure pas, dis-le clairement plutôt que d'inventer. Structure tes réponses avec des listes courtes quand c'est utile.
 
-Données du planning (agence: ${context?.agencyName || 'inconnue'}, semaine du ${context?.weekLabel || 'inconnue'}) :
-${JSON.stringify(context?.scheduleData || {}, null, 2)}
+Données du planning (mois : ${context?.mois || 'inconnu'}) :
+${JSON.stringify(context?.agences || [], null, 2)}
 
 Question de l'utilisateur : ${question}`
 
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
         }),
@@ -41,7 +41,7 @@ Question de l'utilisateur : ${question}`
     if (!response.ok) {
       const errText = await response.text()
       console.error('Erreur Gemini:', errText)
-      return res.status(502).json({ error: 'Erreur lors de la connexion à Gemini.' })
+      return res.status(502).json({ error: `Erreur Gemini (${response.status}): ${errText.slice(0, 200)}` })
     }
 
     const data = await response.json()
