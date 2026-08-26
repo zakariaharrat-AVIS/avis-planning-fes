@@ -219,8 +219,7 @@ function MonthlySummary({ agency, weekStart: initialWeekStart, onClose }) {
         const personShifts = (shifts || []).filter((s) => s.agent_id === p.id)
         const workShifts = personShifts.filter((s) => s.shift_type === 'travail')
         const total = workShifts.reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time, s.agency_id), 0)
-        const absenceDays = personShifts.filter((s) => s.shift_type === 'conge' || s.shift_type === 'maladie').length
-        const norm = (WEEKLY_NORM_HOURS * weekStarts.length) - (absenceDays * HOURS_PER_ABSENCE_DAY)
+        const norm = WEEKLY_NORM_HOURS * weekStarts.length
         return { name: p.name, isAssistant: p.is_assistant, total, norm, diff: total - norm }
       })
       setRows(result)
@@ -297,18 +296,13 @@ function PeopleTable({ title, people, shifts, allShifts, weekStart, canEdit, pic
       .reduce((sum, s) => sum + hoursBetween(s.start_time, s.end_time, s.agency_id), 0)
   }
 
-  const personalNorm = (personId) => {
-    const absenceDays = relevantShifts.filter((s) =>
-      s.agent_id === personId && (s.shift_type === 'conge' || s.shift_type === 'maladie')
-    ).length
-    return WEEKLY_NORM_HOURS - (absenceDays * HOURS_PER_ABSENCE_DAY)
-  }
+  const personalNorm = () => WEEKLY_NORM_HOURS
 
   return (
     <div style={{ marginBottom: 28 }}>
       <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2, color: '#3d3d38' }}>{title}</div>
       <div style={{ fontSize: 11, color: '#9b9a8f', marginBottom: 10 }}>
-        Norme : {WEEKLY_NORM_HOURS}h/semaine (réduite de {HOURS_PER_ABSENCE_DAY}h par jour de Congé/Maladie) — écart affiché sous le total
+        Norme : {WEEKLY_NORM_HOURS}h/semaine — écart affiché sous le total (Congé/Maladie n'affectent ni le total ni la norme)
       </div>
       {people.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 24, color: '#9b9a8f', fontSize: 13, background: '#fff', border: '1px solid #ebe9e2', borderRadius: 10 }}>
@@ -737,4 +731,3 @@ export default function App() {
 
   return <ScheduleApp user={session.user} profile={profile} onLogout={handleLogout} />
 }
-
