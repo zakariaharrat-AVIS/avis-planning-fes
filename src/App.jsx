@@ -737,3 +737,4 @@ export default function App() {
 
   return <ScheduleApp user={session.user} profile={profile} onLogout={handleLogout} />
 }
+
